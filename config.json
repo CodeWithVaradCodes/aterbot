@@ -1,17 +1,31 @@
 {
 	"servers": [
 		{
-			"label": "Server 1",
-			"host": "upland-fairground.play.hosting",
+			"label": "Purple Dell",
+			"host": "purple-dell.play.hosting",
 			"port": 25565,
 			"username": "AterBot1",
 			"version": "auto"
 		},
 		{
-			"label": "Server 2",
-			"host": "your-second-server.example.com",
+			"label": "Pebbly Willowgrove",
+			"host": "pebbly-willowgrove.play.hosting",
 			"port": 25565,
 			"username": "AterBot2",
+			"version": "auto"
+		},
+		{
+			"label": "Upland Fairground",
+			"host": "upland-fairground.play.hosting",
+			"port": 25565,
+			"username": "AterBot3",
+			"version": "auto"
+		},
+		{
+			"label": "Earthen Archipelago",
+			"host": "earthen-archipelago.play.hosting",
+			"port": 25565,
+			"username": "AterBot4",
 			"version": "auto"
 		}
 	],
