@@ -1,0 +1,67 @@
+name: AterBot 24/7
+
+# Triggers:
+#   1. workflow_dispatch  — manual start / self-trigger (primary chain)
+#   2. push to main       — auto-start when you update the code
+#   3. schedule (backup)  — safety net every 6h in case the chain ever breaks
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+  schedule:
+    # Backup cron — fires every 6h (off-the-minute to dodge GitHub's busy-hour delays)
+    - cron: "17 */6 * * *"
+
+# Only ONE run at a time — prevents two bots fighting over the same username
+concurrency:
+  group: aterbot-24-7
+  cancel-in-progress: false
+
+permissions:
+  actions: write   # required so GITHUB_TOKEN can dispatch the next run
+  contents: read
+
+jobs:
+  afk-bot:
+    name: "AFK Bot — 5h cap then restart"
+    runs-on: ubuntu-latest
+    # Hard ceiling: 5h 20m  (job is killed here only if something goes very wrong)
+    timeout-minutes: 320
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Run all bots for EXACTLY 5 hours ──────────────────────────────────
+      # `timeout` exits 0 on timeout (via `|| true`) so the job continues.
+      # All servers in config.json connect simultaneously.
+      - name: Run AterBot (5-hour cap)
+        run: |
+          echo "▶  Bot started at $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          timeout 18000 npm start || true
+          echo "■  Bot stopped at $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+
+      # ── Wait 1–2 minutes then re-trigger this exact workflow ──────────────
+      - name: Sleep 90 seconds (1.5 min gap)
+        run: |
+          echo "⏳ Waiting 90 seconds before next run..."
+          sleep 90
+          echo "✅ Ready to re-trigger."
+
+      - name: Trigger next 5-hour run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run bot.yml \
+            --repo "${{ github.repository }}" \
+            --ref "${{ github.ref_name }}"
+          echo "🚀 Next run queued successfully."

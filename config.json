@@ -1,10 +1,20 @@
 {
-	"client": {
-		"host": "upland-fairground.play.hosting",
-		"port": 25565,
-		"username": "AterBot",
-		"version": "auto"
-	},
+	"servers": [
+		{
+			"label": "Server 1",
+			"host": "upland-fairground.play.hosting",
+			"port": 25565,
+			"username": "AterBot1",
+			"version": "auto"
+		},
+		{
+			"label": "Server 2",
+			"host": "your-second-server.example.com",
+			"port": 25565,
+			"username": "AterBot2",
+			"version": "auto"
+		}
+	],
 
 	"! DO NOT EDIT BELOW !": "ONLY IF YOU KNOW WHAT YOU ARE DOING",
 	"logLevel": ["error", "log", "debug"],
@@ -14,5 +24,3 @@
 		"retryDelay": 15000
 	}
 }
-
-

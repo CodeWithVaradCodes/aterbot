@@ -1,103 +1,138 @@
 /**
- * Shared runtime state between the bot and the web dashboard.
- * Tracks connect/disconnect events so the dashboard can show
- * how long the bot has been online (current session + total).
+ * Per-server runtime state shared between each bot instance and the web dashboard.
+ * Each server gets its own BotState tracked by its label.
  */
 import FS from 'node:fs';
 import PATH from 'node:path';
 
-const DATA_FILE = PATH.resolve(process.cwd(), process.env.DATA_DIR || ".data", "uptime.json");
+export type BotStatus = "connecting" | "online" | "offline";
 
 export type Stats = {
-	/** the most recent login (ms epoch), null while offline */
-	thisSessionStart: number | null,
-	/** accumulated online ms across sessions since the process started (only counted for THIS process run) */
-	totalOnlineThisRun: number,
-	/** how many times the bot successfully logged in during this process run */
-	logins: number,
-	/** how many times the bot was disconnected/reconnected */
-	reconnects: number,
-	/** how much time in ms this process has been running monotonic-ish */
-	processStartedAt: number,
-	/** accumulated minutes persisted from previous runs (approximate) */
-	totalOnlineFromPastRunsMs: number,
-	lastLoginAt: number | null,
-	lastLogoutAt: number | null,
-	status: "connecting" | "online" | "offline",
+	/** Human-readable label for this server */
+	label: string;
+	/** Minecraft host this bot connects to */
+	host: string;
+	/** Minecraft port */
+	port: number;
+	/** Bot username */
+	username: string;
+	/** The most recent login (ms epoch), null while offline */
+	thisSessionStart: number | null;
+	/** Accumulated online ms across sessions since the process started */
+	totalOnlineThisRun: number;
+	/** How many times the bot successfully logged in during this process run */
+	logins: number;
+	/** How many times the bot was disconnected/reconnected */
+	reconnects: number;
+	/** When this process started */
+	processStartedAt: number;
+	/** Accumulated ms persisted from previous runs */
+	totalOnlineFromPastRunsMs: number;
+	lastLoginAt: number | null;
+	lastLogoutAt: number | null;
+	status: BotStatus;
 };
 
-const stats: Stats = {
-	thisSessionStart: null,
-	totalOnlineThisRun: 0,
-	logins: 0,
-	reconnects: 0,
-	processStartedAt: Date.now(),
-	totalOnlineFromPastRunsMs: 0,
-	lastLoginAt: null,
-	lastLogoutAt: null,
-	status: "connecting"
-};
+export class BotState {
+	private data: Stats;
+	private dataFile: string;
 
-/* ---- optional persistence between restarts ---- */
-const load = (): void => {
-	try {
-		if (FS.existsSync(DATA_FILE)) {
-			const raw = JSON.parse(FS.readFileSync(DATA_FILE, "utf8"));
-			stats.totalOnlineFromPastRunsMs = +raw.totalOnlineFromPastRunsMs || 0;
+	constructor(label: string, host: string, port: number, username: string) {
+		// Each server gets its own persisted data file keyed by label slug
+		const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+		this.dataFile = PATH.resolve(
+			process.cwd(),
+			process.env.DATA_DIR || ".data",
+			`uptime-${slug}.json`
+		);
+		this.data = {
+			label,
+			host,
+			port,
+			username,
+			thisSessionStart: null,
+			totalOnlineThisRun: 0,
+			logins: 0,
+			reconnects: 0,
+			processStartedAt: Date.now(),
+			totalOnlineFromPastRunsMs: 0,
+			lastLoginAt: null,
+			lastLogoutAt: null,
+			status: "connecting",
+		};
+		this.load();
+	}
+
+	private load(): void {
+		try {
+			if (FS.existsSync(this.dataFile)) {
+				const raw = JSON.parse(FS.readFileSync(this.dataFile, "utf8"));
+				this.data.totalOnlineFromPastRunsMs = +raw.totalOnlineFromPastRunsMs || 0;
+			}
+		} catch {
+			/* ignore unreadable data; start fresh */
 		}
-	} catch {
-		/* ignore unreadable data; start fresh */
 	}
-};
-const save = (): void => {
-	try {
-		FS.mkdirSync(PATH.dirname(DATA_FILE), { recursive: true });
-		FS.writeFileSync(DATA_FILE, JSON.stringify({
-			totalOnlineFromPastRunsMs: stats.totalOnlineFromPastRunsMs
-		}, null, "\t"));
-	} catch {
-		/* read-only filesystem (e.g. some hosts); keep in memory */
+
+	private save(): void {
+		try {
+			FS.mkdirSync(PATH.dirname(this.dataFile), { recursive: true });
+			FS.writeFileSync(this.dataFile, JSON.stringify({
+				totalOnlineFromPastRunsMs: this.data.totalOnlineFromPastRunsMs
+			}, null, "\t"));
+		} catch {
+			/* read-only filesystem; keep in memory */
+		}
 	}
-};
-load();
 
-/** called when the bot successfully joins the server */
-export const onLogin = (): void => {
-	stats.thisSessionStart = Date.now();
-	stats.lastLoginAt = Date.now();
-	stats.logins++;
-	stats.status = "online";
-};
-
-/** called when the bot disconnects; folds the session into the totals */
-export const onLogout = (): void => {
-	if (stats.thisSessionStart) {
-		stats.totalOnlineThisRun += Date.now() - stats.thisSessionStart;
-		// persist in ~1 minute buckets so frequent reconnects don't thrash disk
-		stats.totalOnlineFromPastRunsMs = Math.round((stats.totalOnlineFromPastRunsMs + stats.totalOnlineThisRun) / 60000) * 60000;
-		save();
-		stats.totalOnlineThisRun = 0;
+	onLogin(): void {
+		this.data.thisSessionStart = Date.now();
+		this.data.lastLoginAt = Date.now();
+		this.data.logins++;
+		this.data.status = "online";
 	}
-	stats.thisSessionStart = null;
-	stats.lastLogoutAt = Date.now();
-	stats.status = "offline";
+
+	onLogout(): void {
+		if (this.data.thisSessionStart) {
+			this.data.totalOnlineThisRun += Date.now() - this.data.thisSessionStart;
+			this.data.totalOnlineFromPastRunsMs = Math.round(
+				(this.data.totalOnlineFromPastRunsMs + this.data.totalOnlineThisRun) / 60000
+			) * 60000;
+			this.save();
+			this.data.totalOnlineThisRun = 0;
+		}
+		this.data.thisSessionStart = null;
+		this.data.lastLogoutAt = Date.now();
+		this.data.status = "offline";
+	}
+
+	setStatus(s: BotStatus): void {
+		if (!this.data.thisSessionStart) this.data.status = s;
+	}
+
+	markReconnect(): void {
+		this.data.reconnects++;
+	}
+
+	getStats(): Stats & { sessionOnlineMs: number; totalOnlineMs: number; processUptimeMs: number } {
+		const sessionOnlineMs = this.data.thisSessionStart
+			? this.data.totalOnlineThisRun + Date.now() - this.data.thisSessionStart
+			: this.data.totalOnlineThisRun;
+		return {
+			...this.data,
+			sessionOnlineMs,
+			totalOnlineMs: this.data.totalOnlineFromPastRunsMs + sessionOnlineMs,
+			processUptimeMs: Date.now() - this.data.processStartedAt,
+		};
+	}
+}
+
+/** Registry of all active bot states, keyed by label */
+const registry = new Map<string, BotState>();
+
+export const registerState = (state: BotState): void => {
+	registry.set(state.getStats().label, state);
 };
 
-export const setStatus = (s: Stats["status"]): void => {
-	if (!stats.thisSessionStart) stats.status = s;
-};
-
-export const markReconnect = (): void => {
-	stats.reconnects++;
-};
-
-export const getStats = (): Stats => {
-	const onlineNow = stats.thisSessionStart
-		? stats.totalOnlineThisRun + Date.now() - stats.thisSessionStart
-		: stats.totalOnlineThisRun;
-	return {
-		...stats,
-		totalOnlineNowMs: stats.totalOnlineFromPastRunsMs + onlineNow,
-		processUptimeMs: Date.now() - stats.processStartedAt
-	} as any;
-};
+export const getAllStats = () =>
+	Array.from(registry.values()).map(s => s.getStats());
