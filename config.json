@@ -27,6 +27,13 @@
 			"port": 25565,
 			"username": "AterBot4",
 			"version": "auto"
+		},
+		{
+			"label": "Velvet Ranch",
+			"host": "velvet-ranch.play.hosting",
+			"port": 25565,
+			"username": "AterBot5",
+			"version": "auto"
 		}
 	],
 
